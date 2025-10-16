@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import QrScanner from "qr-scanner";
@@ -38,9 +38,25 @@ const AddModelModal = ({
   onSubmit = () => {},
 }: AddModelModalProps) => {
   const [scannerActive, setScannerActive] = useState(false);
+  const [hasScannedCode, setHasScannedCode] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
   const [qrScanner, setQrScanner] = useState<QrScanner | null>(null);
   const { toast } = useToast();
+
+  // Disable zooming when modal is open
+  useEffect(() => {
+    if (open) {
+      const viewportMeta = document.createElement('meta');
+      viewportMeta.name = 'viewport';
+      viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+      document.head.appendChild(viewportMeta);
+
+      return () => {
+        document.head.removeChild(viewportMeta);
+      };
+    }
+  }, [open]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -70,8 +86,33 @@ const AddModelModal = ({
     }
   };
 
+  const handleSuccessfulScan = (secret: string, issuer: string | null, account: string | null) => {
+    if (hasScannedCode) return; // Prevent multiple scans
+    
+    setHasScannedCode(true);
+    handleSecretInput(secret);
+    const name = issuer && account ? `${issuer} (${account})` : issuer || account || "TOTP Code";
+    form.setValue("name", name);
+    if (account) {
+      form.setValue("username", account);
+    }
+    stopScanner();
+    
+    toast({
+      title: "QR Code Scanned Successfully",
+      description: "The authentication code has been added.",
+      variant: "default",
+    });
+    
+    // Scroll to form fields after successful scan
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
   const startScanner = async () => {
     if (!videoRef.current) return;
+    setHasScannedCode(false); // Reset scan state
 
     try {
       const scanner = new QrScanner(
@@ -83,18 +124,7 @@ const AddModelModal = ({
           const issuer = params.get("issuer");
           const account = params.get("account");
           if (secret) {
-            handleSecretInput(secret);
-            const name = issuer && account ? `${issuer} (${account})` : issuer || account || "TOTP Code";
-            form.setValue("name", name);
-            if (account) {
-              form.setValue("username", account);
-            }
-            toast({
-              title: "QR Code Scanned Successfully",
-              description: "The authentication code has been added.",
-              variant: "default",
-            });
-            stopScanner();
+            handleSuccessfulScan(secret, issuer, account);
           }
         },
         { returnDetailedScanResult: true },
@@ -134,7 +164,7 @@ const AddModelModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] bg-background border-border">
+      <DialogContent className="sm:max-w-[425px] bg-background border-border h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Add New Code</DialogTitle>
           <DialogDescription>
@@ -143,9 +173,9 @@ const AddModelModal = ({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="flex-1 overflow-y-auto space-y-4 px-1">
             <Tabs defaultValue="manual" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-2 sticky top-0 bg-background z-10">
                 <TabsTrigger value="manual" className="flex items-center gap-2">
                   <Key className="w-4 h-4" />
                   Manual Entry
@@ -179,8 +209,8 @@ const AddModelModal = ({
                 />
               </TabsContent>
 
-              <TabsContent value="qr" className="space-y-4">
-                <div className="relative aspect-square w-full max-w-[300px] mx-auto bg-muted rounded-lg overflow-hidden">
+              <TabsContent value="qr" className="space-y-4 relative">
+                <div className="relative aspect-square w-full max-w-[300px] mx-auto bg-muted rounded-lg overflow-hidden touch-none">
                   <video ref={videoRef} className="w-full h-full object-cover" />
                   {!scannerActive ? (
                     <Button
@@ -204,7 +234,7 @@ const AddModelModal = ({
               </TabsContent>
             </Tabs>
 
-            <div className="space-y-4 pt-4">
+            <div ref={formRef} className="space-y-4 pt-4">
               <FormField
                 control={form.control}
                 name="name"
@@ -266,7 +296,7 @@ const AddModelModal = ({
               />
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 bg-background py-4 mt-8">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>

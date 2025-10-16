@@ -65,8 +65,13 @@ const TeamAccess = ({ currentRole = "User" }: { currentRole?: Role | null }) => 
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [nameSearchQuery, setNameSearchQuery] = useState("");
   
-  // Get role from localStorage if not provided as prop
-  const role = currentRole || localStorage.getItem("userRole") as Role || "User";
+  // Get role from localStorage if not provided as prop and normalize it
+  const normalizeRole = (role: string | null): Role => {
+    if (!role) return "User";
+    const validRoles = ["Admin", "Manager", "User"];
+    return (validRoles.find(r => r.toLowerCase() === role.toLowerCase()) || "User") as Role;
+  };
+  const role = normalizeRole(currentRole || localStorage.getItem("userRole"));
   console.log('Current role:', role); // Debug log
 
   const availableGroups = useMemo(() => 
@@ -329,12 +334,12 @@ const TeamAccess = ({ currentRole = "User" }: { currentRole?: Role | null }) => 
               </Button>
             </div>
             <div className="flex gap-2 items-center w-full sm:w-auto">
-              <div className="flex-1 sm:w-[200px]">
+              <div className="w-full sm:w-[200px]">
                 <div className="relative">
                   <Input
                     placeholder="Search by name..."
                     onChange={handleSearchChange}
-                    className="flex-1 sm:w-[200px]"
+                    className="w-full"
                     value={nameSearchQuery}
                   />
                   {nameSearchQuery && (

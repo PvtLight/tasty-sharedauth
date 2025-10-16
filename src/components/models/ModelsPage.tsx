@@ -9,7 +9,15 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, Share2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Share2, X, MoreVertical } from "lucide-react";
+import { CircularProgress } from "@/components/ui/circular-progress";
+import { getTimeRemaining } from "@/lib/utils/totp";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Header from "../dashboard/Header";
 import TOTPDisplay from "./TOTPDisplay";
 import Sidebar from "../layout/Sidebar";
@@ -45,6 +53,7 @@ const ModelsPage = () => {
   const [sharingModel, setSharingModel] = useState<Model | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [timeRemaining, setTimeRemaining] = useState(getTimeRemaining());
   
   const toggleMobileSidebar = useCallback(() => {
     setIsMobileSidebarOpen(prev => !prev);
@@ -137,6 +146,16 @@ const ModelsPage = () => {
     };
 
     setupSubscription();
+  }, []);
+
+  useEffect(() => {
+    // Update the timer every second
+    const timer = setInterval(() => {
+      setTimeRemaining(getTimeRemaining());
+    }, 1000);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(timer);
   }, []);
 
   const handleAddModel = async (values: FormValues) => {
@@ -273,24 +292,28 @@ const ModelsPage = () => {
 
       <main className="flex-1 md:ml-64 ml-0 pt-16 px-2 sm:px-4 container mx-auto max-w-7xl bg-background min-h-screen">
         <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-            <div className="flex justify-between items-center w-full">
-              <h2 className="text-2xl font-semibold">Codes</h2>
-              <Button
-                variant="default"
-                onClick={() => setIsAddModalOpen(true)}
-                className="hidden md:flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Code
-              </Button>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex justify-between items-center w-full">
+                <h2 className="text-2xl font-semibold">Codes</h2>
+                <Button
+                  variant="default"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="hidden md:flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Code
+                </Button>
+              </div>
             </div>
-            <div className="w-full sm:w-[300px]">
+
+            <div className="w-full max-w-md mx-auto sm:mx-0">
               <div className="relative">
                 <Input
                   placeholder="Search codes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full"
                 />
                 {searchQuery && (
                   <Button
@@ -309,72 +332,82 @@ const ModelsPage = () => {
           {/* Mobile View */}
           <div className="block lg:hidden space-y-4">
             {filteredModels.map((model) => (
-              <div key={model.id} className="border rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4 bg-card">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <h3 className="font-medium text-base sm:text-lg">{model.name}</h3>
-                    <p className="text-sm text-muted-foreground">{model.username}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSharingModel(model)}
-                      className="h-8 w-8"
+              <div key={model.id} className="bg-card rounded-lg p-4 shadow-sm border">
+                {model.totp_secret && (
+                  <div className="grid grid-cols-[1fr,auto] gap-4">
+                    <div 
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        try {
+                          const totpDisplay = document.querySelector(`[data-model-id="${model.id}"]`);
+                          const code = totpDisplay?.textContent || '';
+                          await navigator.clipboard.writeText(code);
+                          toast({
+                            title: "Code copied!",
+                            description: "The 2FA code has been copied to your clipboard.",
+                          });
+                        } catch (err) {
+                          console.error("Error copying to clipboard:", err);
+                          toast({
+                            title: "Error",
+                            description: "Failed to copy code to clipboard",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      className="cursor-pointer select-none active:bg-accent/50 hover:bg-accent/25 rounded-lg transition-colors p-4 space-y-2"
                     >
-                      <Share2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setEditingModel(model)}
-                      className="h-8 w-8"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteModelId(model.id)}
-                      className="h-8 w-8"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+                      <h3 className="font-semibold text-xl">{model.name}</h3>
+                      <div className="flex items-center">
+                        <span className="text-4xl font-mono tracking-wider">
+                          <TOTPDisplay 
+                            secret={model.totp_secret}
+                            modelId={model.id}
+                            modelName={model.name}
+                          />
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{model.username}</p>
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground block mb-1">Code</span>
-                    <span className="font-medium break-all">{model.code}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-1">2FA Code</span>
-                    <div className="font-medium">
-                      {model.totp_secret ? (
-                        <TOTPDisplay 
-                          secret={model.totp_secret}
-                          modelId={model.id}
+                    <div className="flex flex-col items-center justify-start gap-2 py-4">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-5 w-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setSharingModel(model)}>
+                            <Share2 className="h-4 w-4 mr-2" />
+                            Share
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setEditingModel(model)}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-red-600"
+                            onClick={() => setDeleteModelId(model.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      <div className="relative w-12 h-12 flex items-center justify-center">
+                        <CircularProgress 
+                          value={(timeRemaining / 30) * 100} 
+                          className="h-12 w-12 text-primary absolute"
                         />
-                      ) : (
-                        <span className="text-gray-400">No 2FA configured</span>
-                      )}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-sm font-semibold">{timeRemaining}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  {model.link && (
-                    <div className="col-span-1 sm:col-span-2">
-                      <span className="text-muted-foreground block mb-1">Link</span>
-                      <a
-                        href={model.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline break-all"
-                      >
-                        {model.link}
-                      </a>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             ))}
             {!loading && models.length === 0 && (
@@ -391,7 +424,7 @@ const ModelsPage = () => {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Username</TableHead>
-                  <TableHead>Code</TableHead>
+                 
                   <TableHead>2FA Code</TableHead>
                   <TableHead>Link</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -402,16 +435,32 @@ const ModelsPage = () => {
                   <TableRow key={model.id}>
                     <TableCell>{model.name}</TableCell>
                     <TableCell>{model.username}</TableCell>
-                    <TableCell>{model.code}</TableCell>
+                   
                     <TableCell>
-                      {model.totp_secret ? (
-                        <TOTPDisplay 
-                          secret={model.totp_secret}
-                          modelId={model.id}
-                        />
-                      ) : (
-                        <span className="text-gray-400">No 2FA configured</span>
-                      )}
+                      <div className="flex items-center gap-4 w-[300px]">
+                        {model.totp_secret ? (
+                          <>
+                            <div className="flex-1">
+                              <TOTPDisplay 
+                                secret={model.totp_secret}
+                                modelId={model.id}
+                                modelName={model.name}
+                              />
+                            </div>
+                            <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
+                              <CircularProgress 
+                                value={(timeRemaining / 30) * 100} 
+                                className="h-12 w-12 text-primary absolute"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-sm font-semibold">{timeRemaining}</span>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">No 2FA configured</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {model.link && (

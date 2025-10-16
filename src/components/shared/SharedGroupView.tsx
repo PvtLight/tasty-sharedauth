@@ -2,9 +2,110 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Shield } from "lucide-react";
+import { Copy, Shield } from "lucide-react";
 import GroupTOTPDisplay from "../group/GroupTOTPDisplay";
+import { Timer } from "@/components/group/Timer";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { generateTOTP, getTimeRemaining } from "@/lib/utils/totp";
+import { useToast } from "@/components/ui/use-toast";
+import { Toaster } from "@/components/ui/toaster";
+
+interface SharedGroupTOTPDisplayProps {
+  secret: string;
+  codeId: string;
+}
+
+const SharedGroupTOTPDisplay = ({ secret, codeId }: SharedGroupTOTPDisplayProps) => {
+  const [copied, setCopied] = useState(false);
+  const [code, setCode] = useState("");
+  const [timeLeft, setTimeLeft] = useState(30);
+
+  useEffect(() => {
+    let mounted = true;
+    let timerInterval: NodeJS.Timeout;
+
+    const updateCode = async () => {
+      if (!mounted) return;
+      try {
+        const newCode = await generateTOTP(secret);
+        if (mounted) {
+          setCode(newCode);
+        }
+      } catch (err) {
+        console.error('Error generating TOTP:', err);
+      }
+    };
+
+    const updateTimer = () => {
+      if (!mounted) return;
+      const remaining = getTimeRemaining();
+      setTimeLeft(remaining);
+
+      // Update code when timer reaches 30 or 0
+      if (remaining === 30 || remaining === 0) {
+        console.log(`Timer reached ${remaining}, updating code`);
+        updateCode();
+      }
+    };
+
+    // Initial updates
+    updateTimer();
+    updateCode();
+
+    // Set up interval for timer updates
+    timerInterval = setInterval(updateTimer, 1000);
+
+    return () => {
+      mounted = false;
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [secret]);
+
+  const { toast } = useToast();
+  
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Code copied",
+        description: "The 2FA code has been copied to your clipboard",
+        duration: 2000
+      });
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      toast({
+        title: "Failed to copy",
+        description: "Please try copying manually",
+        variant: "destructive"
+      });
+    }
+  };
+
+  return (
+    <div className="w-full flex flex-col items-center">
+      <div className="font-mono text-xl sm:text-4xl tracking-[0.25em] sm:tracking-[0.5em] text-primary font-bold break-all sm:break-normal mb-4">
+        {code}
+      </div>
+      <Timer
+        expiresAt={new Date(Date.now() + timeLeft * 1000).toISOString()}
+        codeId={codeId}
+        showRefreshText={false}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleCopy}
+        className="mt-2"
+      >
+        <Copy className="h-4 w-4 mr-2" />
+        {copied ? 'Copied!' : 'Copy Code'}
+      </Button>
+    </div>
+  );
+};
 
 interface Code {
   id: string;
@@ -411,6 +512,7 @@ const SharedGroupView = () => {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <Toaster />
       <Card className="w-[400px]">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
@@ -430,13 +532,11 @@ const SharedGroupView = () => {
             )}
             {latestCode?.secret && latestCode?.id && (
               <>
-                <p className="text-sm text-muted-foreground">{latestCode.name || ' '}</p>
-                <div className="w-full">
-                  <GroupTOTPDisplay 
-                    secret={latestCode.secret}
-                    codeId={latestCode.id}
-                  />
-                </div>
+                <p className="text-sm text-muted-foreground text-center">{latestCode.name || ' '}</p>
+                <SharedGroupTOTPDisplay
+                  secret={latestCode.secret} 
+                  codeId={latestCode.id}
+                />
               </>
             )}
             <div className="flex items-center gap-2">

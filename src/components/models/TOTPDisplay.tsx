@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { generateTOTP, getTimeRemaining } from "@/lib/utils/totp";
-import { Progress } from "@/components/ui/progress";
 import { updateModelCode } from "@/lib/db/queries";
-import { Copy } from "lucide-react";
+import { Copy, QrCode } from "lucide-react";
+import QRCode from "qrcode";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 
 interface TOTPDisplayProps {
   secret: string | null;
   modelId: string;
+  modelName?: string;
 }
 
-const TOTPDisplay = ({ secret, modelId }: TOTPDisplayProps) => {
+const TOTPDisplay = ({ secret, modelId, modelName = "Model" }: TOTPDisplayProps) => {
   const { toast } = useToast();
   const [code, setCode] = useState<string>("");
   const [updateError, setUpdateError] = useState(false);
@@ -104,23 +105,56 @@ const TOTPDisplay = ({ secret, modelId }: TOTPDisplayProps) => {
   }
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <div className={`font-mono text-xl sm:text-4xl tracking-[0.25em] sm:tracking-[0.5em] text-primary font-semibold break-all sm:break-normal ${updateError ? 'text-yellow-500' : ''}`}>
+    <div className="space-y-4">
+      <div className="flex items-center">
+        <div data-model-id={modelId} className={`font-mono text-3xl tracking-[0.25em] text-primary font-bold ${updateError ? 'text-yellow-500' : ''}`}>
           {code}
         </div>
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           onClick={handleCopy}
-          className="shrink-0 h-8 w-8"
+          className="shrink-0 h-8 w-8 ml-2"
         >
           <Copy className="h-4 w-4" />
         </Button>
-      </div>
-      <Progress value={(timeRemaining / 30) * 100} className="h-1.5 bg-gray-100" />
-      <div className="text-xs sm:text-sm text-muted-foreground text-center">
-        Refreshes in {timeRemaining}s
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={async () => {
+            try {
+              const otpauthUrl = `otpauth://totp/${encodeURIComponent(modelName)}?secret=${secret}&issuer=${encodeURIComponent(modelName)}&algorithm=SHA1&digits=6&period=30`;
+              
+              // Generate QR code as data URL
+              const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
+              
+              // Create temporary link element
+              const link = document.createElement('a');
+              link.href = qrDataUrl;
+              link.download = `${modelName}-totp-backup.png`;
+              
+              // Trigger download
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+
+              toast({
+                title: "QR Code downloaded",
+                description: "Your TOTP backup QR code has been downloaded successfully.",
+              });
+            } catch (error) {
+              console.error('Error generating QR code:', error);
+              toast({
+                title: "Error",
+                description: "Failed to generate QR code backup.",
+                variant: "destructive",
+              });
+            }
+          }}
+          className="shrink-0 h-8 w-8"
+        >
+          <QrCode className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );
